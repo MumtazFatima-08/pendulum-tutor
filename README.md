@@ -32,7 +32,7 @@ Chaos theory and AI reliability are usually taught in separate units, both as ab
 
 ## Stack
 
-Vanilla HTML/CSS/JS, canvas rendering, RK4 physics integration, Google Gemini API (`gemini-2.5-flash`, free tier) for the adaptive tutor. No backend, no dependencies.
+Vanilla HTML/CSS/JS, canvas rendering, RK4 physics integration, Google Gemini API (`gemini-3.6-flash`, free tier) for the adaptive tutor. No backend, no dependencies.
 
 ## Files
 
