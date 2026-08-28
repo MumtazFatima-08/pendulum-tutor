@@ -1,4 +1,4 @@
-# chaos-honest-ai
+# pendulum tutor
 
 **Rebuild the Classroom Hackathon — Round 1 Submission**
 
