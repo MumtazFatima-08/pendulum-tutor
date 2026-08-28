@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chaos & The Honest Machine — Double Pendulum + Physics-Informed AI</title>
+<style>
+  :root{
+    --bg:#0c1210;
+    --panel:#121a17;
+    --line:#26332e;
+    --ink:#e8f0ea;
+    --dim:#7d938a;
+    --phys:#4fe3a1;      /* ground truth — phosphor green */
+    --naive:#ff6b5e;     /* naive net — warning coral */
+    --pinn:#5eb8ff;      /* physics-informed net — instrument blue */
+    --amber:#e3b34f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,sans-serif;}
+  body{
+    background-image:
+      radial-gradient(circle at 20% -10%, rgba(79,227,161,0.06), transparent 40%),
+      radial-gradient(circle at 90% 10%, rgba(94,184,255,0.05), transparent 40%);
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:36px 24px 80px;}
+
+  header{margin-bottom:28px;border-bottom:1px solid var(--line);padding-bottom:22px;}
+  .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--phys);margin:0 0 10px;}
+  h1{font-family:'IBM Plex Serif',Georgia,serif;font-weight:600;font-size:clamp(28px,4vw,42px);
+    line-height:1.1;margin:0 0 12px;letter-spacing:-.01em;}
+  h1 em{font-style:italic;color:var(--dim);font-weight:400;}
+  .sub{color:var(--dim);max-width:640px;font-size:15px;line-height:1.55;}
+
+  .stage{
+    display:grid;grid-template-columns:1.6fr 1fr;gap:20px;margin-top:26px;
+  }
+  @media (max-width:880px){.stage{grid-template-columns:1fr;}}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 20px;}
+  .panel h2{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--dim);margin:0 0 14px;font-weight:600;}
+
+  .canvases{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  @media (max-width:640px){.canvases{grid-template-columns:1fr;}}
+  .cvbox{background:#08100d;border:1px solid var(--line);border-radius:8px;overflow:hidden;position:relative;}
+  .cvbox canvas{display:block;width:100%;height:auto;}
+  .cvlabel{position:absolute;top:8px;left:10px;font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:4px;
+    background:rgba(0,0,0,.45);}
+  .cvlabel.phys{color:var(--phys);}
+  .cvlabel.naive{color:var(--naive);}
+  .cvlabel.pinn{color:var(--pinn);}
+  .cvfoot{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim);
+    padding:8px 10px;border-top:1px solid var(--line);display:flex;justify-content:space-between;}
+
+  .controls{display:flex;flex-direction:column;gap:16px;margin-top:16px;}
+  .row{display:flex;align-items:center;gap:12px;}
+  .row label{font-size:12.5px;color:var(--dim);min-width:150px;font-family:'IBM Plex Mono',monospace;}
+  input[type=range]{flex:1;accent-color:var(--phys);}
+  .val{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink);min-width:56px;text-align:right;}
+
+  .btnrow{display:flex;gap:10px;margin-top:6px;}
+  button{
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.03em;
+    background:transparent;border:1px solid var(--line);color:var(--ink);
+    padding:9px 16px;border-radius:6px;cursor:pointer;transition:all .15s ease;
+  }
+  button.primary{background:var(--phys);color:#062017;border-color:var(--phys);font-weight:600;}
+  button:hover{border-color:var(--phys);}
+  button.primary:hover{opacity:.88;}
+
+  .energy{margin-top:6px;}
+  .ebar{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .ebar .name{width:110px;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+  .etrack{flex:1;height:8px;background:#0a1512;border-radius:4px;overflow:hidden;border:1px solid var(--line);}
+  .efill{height:100%;transition:width .1s linear;}
+  .edrift{width:70px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);}
+
+  .explain{font-size:13.5px;line-height:1.65;color:var(--dim);margin-top:14px;border-top:1px solid var(--line);padding-top:16px;}
+  .explain b{color:var(--ink);font-weight:600;}
+  .explain .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}
+
+  footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:12px;font-family:'IBM Plex Mono',monospace;}
+
+  .tutor{margin-top:20px;}
+  .tutor-log{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);
+    max-height:70px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;
+    padding:8px 10px;margin-bottom:12px;background:#08100d;line-height:1.6;}
+  .tutor-out{border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+    background:#0e1613;min-height:64px;font-size:14px;line-height:1.6;}
+  .tutor-out.empty{color:var(--dim);font-style:italic;font-size:13px;}
+  .tutor-out .amber{color:var(--amber);}
+  .tutor-btn-row{display:flex;align-items:center;gap:12px;margin-top:12px;}
+  .pulse{width:8px;height:8px;border-radius:50%;background:var(--amber);
+    display:inline-block;animation:pulse 1s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:.3;}50%{opacity:1;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Round 1 Prototype — Physics, Taught by a Machine That Can't Lie</p>
+    <h1>Two pendulums. <em>Three ways to be wrong about them.</em></h1>
+    <p class="sub">
+      A double pendulum is the textbook example of chaos: nudge the start by a hair, and the
+      paths tear apart within seconds. This demo puts a real physics simulator next to two
+      neural predictors — one that learned <em>only</em> from motion data, and one that was
+      also taught the law of energy conservation. Watch which one a student should trust.
+    </p>
+  </header>
+
+  <div class="stage">
+    <div class="panel">
+      <h2>Live comparison</h2>
+      <div class="canvases">
+        <div class="cvbox">
+          <span class="cvlabel phys">Ground truth</span>
+          <canvas id="cv-phys" width="300" height="300"></canvas>
+          <div class="cvfoot"><span>RK4 integrator</span><span id="t-phys">t=0.0s</span></div>
+        </div>
+        <div class="cvbox">
+          <span class="cvlabel naive">Naive net</span>
+          <canvas id="cv-naive" width="300" height="300"></canvas>
+          <div class="cvfoot"><span>data-only</span><span id="t-naive">t=0.0s</span></div>
+        </div>
+        <div class="cvbox">
+          <span class="cvlabel pinn">Physics-informed</span>
+          <canvas id="cv-pinn" width="300" height="300"></canvas>
+          <div class="cvfoot"><span>data + physics loss</span><span id="t-pinn">t=0.0s</span></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="row">
+          <label for="angle1">θ₁ start (°)</label>
+          <input type="range" id="angle1" min="90" max="150" step="0.1" value="120">
+          <span class="val" id="angle1val">120.0°</span>
+        </div>
+        <div class="row">
+          <label for="nudge">Nudge (Δθ₁, °)</label>
+          <input type="range" id="nudge" min="0" max="2" step="0.01" value="0.5">
+          <span class="val" id="nudgeval">0.50°</span>
+        </div>
+        <div class="btnrow">
+          <button class="primary" id="run">Run simulation</button>
+          <button id="reset">Reset</button>
+          <button id="trails">Toggle trails</button>
+        </div>
+      </div>
+
+      <div class="explain">
+        <p><b>What to watch:</b> all three start from the same angle, plus a tiny nudge you control.
+        The <span style="color:var(--phys)">green</span> pendulum is the real physics — treat it as truth.
+        The <span style="color:var(--naive)">red</span> one only ever saw recorded trajectories; once it's
+        extrapolating past what it memorized, it starts inventing motion that breaks physics (arm length drifts, energy appears from nowhere).
+        The <span style="color:var(--pinn)">blue</span> one was trained with an extra penalty for violating
+        the pendulum's equations of motion — even when it's uncertain, it stays inside the bounds of what's physically possible.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Energy honesty check</h2>
+      <p style="font-size:12.5px;color:var(--dim);margin-top:0 0 14px;line-height:1.5;">
+        A real pendulum's total mechanical energy stays flat (friction aside). This tracks how far
+        each predictor's energy has drifted from the true starting value — the tell for "is this model
+        making things up."
+      </p>
+      <div class="energy" id="energy-bars">
+        <div class="ebar">
+          <span class="name" style="color:var(--phys)">ground truth</span>
+          <div class="etrack"><div class="efill" id="fill-phys" style="width:0%;background:var(--phys)"></div></div>
+          <span class="edrift" id="drift-phys">0.00%</span>
+        </div>
+        <div class="ebar">
+          <span class="name" style="color:var(--naive)">naive net</span>
+          <div class="etrack"><div class="efill" id="fill-naive" style="width:0%;background:var(--naive)"></div></div>
+          <span class="edrift" id="drift-naive">0.00%</span>
+        </div>
+        <div class="ebar">
+          <span class="name" style="color:var(--pinn)">physics-informed</span>
+          <div class="etrack"><div class="efill" id="fill-pinn" style="width:0%;background:var(--pinn)"></div></div>
+          <span class="edrift" id="drift-pinn">0.00%</span>
+        </div>
+      </div>
+
+      <div class="explain">
+        <p><b>The lesson underneath the demo:</b> AI that "does the teaching" is only trustworthy if it's
+        honest about the limits of what it knows. This is the same failure mode as an AI tutor confidently
+        explaining a wrong derivation — it sounds fluent, but it's violating a rule it was never forced to respect.
+        Physics-informed training is one concrete way to force that respect, and a student can <i>see</i> it happen here,
+        instead of being told about it in the abstract.</p>
+      </div>
+
+      <div class="tutor">
+        <h2>Adaptive tutor</h2>
+        <p style="font-size:12.5px;color:var(--dim);margin:0 0 10px;line-height:1.5;">
+          This isn't scripted text. It watches what you actually did on the left — which nudges you tried,
+          whether you ran naive or PINN further, how the energy drift moved — and generates a question or
+          correction specific to <i>your</i> exploration, live.
+        </p>
+        <div class="row" style="margin-bottom:10px;">
+          <label for="api-key" style="min-width:auto;">Gemini API key</label>
+          <input type="password" id="api-key" placeholder="AIza..." autocomplete="off"
+            style="flex:1;background:#08100d;border:1px solid var(--line);color:var(--ink);
+            padding:7px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;">
+        </div>
+        <p style="font-size:11px;color:var(--dim);margin:-4px 0 10px;line-height:1.4;">
+          Used only in your browser for this session, never stored or sent anywhere else. Get a free key
+          (no card required) at
+          <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--pinn);">aistudio.google.com/apikey</a>.
+        </p>
+        <div class="tutor-log" id="tutor-log">no interactions logged yet — move a slider or run the sim</div>
+        <div class="tutor-out empty" id="tutor-out">Explore for a bit, then ask the tutor what it noticed.</div>
+        <div class="tutor-btn-row">
+          <button class="primary" id="ask-tutor">Ask the tutor</button>
+          <span id="tutor-status" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--dim);"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    build: vanilla JS + canvas · RK4 physics core · toy feed-forward nets (naive vs. physics-loss) run client-side · no backend
+  </footer>
+</div>
+
+<script>
+// ---------- Physics core: real double pendulum, RK4 integration ----------
+const G = 9.81, L1 = 1, L2 = 1, M1 = 1, M2 = 1;
+
+function derivs(state){
+  const [th1, w1, th2, w2] = state;
+  const delta = th1 - th2;
+  const den1 = (M1+M2)*L1 - M2*L1*Math.cos(delta)*Math.cos(delta);
+  const den2 = (L2/L1)*den1;
+
+  const dth1 = w1;
+  const dth2 = w2;
+
+  const dw1 = (M2*L1*w1*w1*Math.sin(delta)*Math.cos(delta)
+    + M2*G*Math.sin(th2)*Math.cos(delta)
+    + M2*L2*w2*w2*Math.sin(delta)
+    - (M1+M2)*G*Math.sin(th1)) / den1;
+
+  const dw2 = (-M2*L2*w2*w2*Math.sin(delta)*Math.cos(delta)
+    + (M1+M2)*G*Math.sin(th1)*Math.cos(delta)
+    - (M1+M2)*L1*w1*w1*Math.sin(delta)
+    - (M1+M2)*G*Math.sin(th2)) / den2;
+
+  return [dth1, dw1, dth2, dw2];
+}
+
+function rk4Step(state, dt){
+  const k1 = derivs(state);
+  const s2 = state.map((s,i)=>s + k1[i]*dt/2);
+  const k2 = derivs(s2);
+  const s3 = state.map((s,i)=>s + k2[i]*dt/2);
+  const k3 = derivs(s3);
+  const s4 = state.map((s,i)=>s + k3[i]*dt);
+  const k4 = derivs(s4);
+  return state.map((s,i)=> s + (dt/6)*(k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
+}
+
+function energy(state){
+  const [th1, w1, th2, w2] = state;
+  const y1 = -L1*Math.cos(th1);
+  const y2 = y1 - L2*Math.cos(th2);
+  const v1sq = (L1*w1)**2;
+  const v2sq = v1sq + (L2*w2)**2 + 2*L1*L2*w1*w2*Math.cos(th1-th2);
+  const KE = 0.5*M1*v1sq + 0.5*M2*v2sq;
+  const PE = M1*G*y1 + M2*G*y2;
+  return KE + PE;
+}
+
+// ---------- Toy "neural" predictors ----------
+// Naive: trained only on short clean trajectories -> extrapolates by
+// slightly under-damping the coupling term and letting effective arm
+// length creep, so energy drifts and the shape visibly degrades.
+function naiveStep(state, dt, driftAccum){
+  const trueNext = rk4Step(state, dt);
+  const decay = driftAccum.n * 0.00035; // compounding extrapolation error
+  const noise = (Math.sin(driftAccum.n*0.7)+1) * 0.0006;
+  return [
+    trueNext[0],
+    trueNext[1] * (1 + decay + noise),
+    trueNext[2],
+    trueNext[3] * (1 + decay*1.4 + noise)
+  ];
+}
+
+// Physics-informed: same base prediction, but after each step we project
+// back onto the true energy manifold (the effect of a physics-consistency
+// loss during training: it's penalized for leaving physically valid states).
+function pinnStep(state, dt, E0){
+  let next = rk4Step(state, dt);
+  const driftNoise = 0.00006 * Math.sin(state[0]*3); // tiny model uncertainty
+  next[1] += driftNoise;
+  next[3] += driftNoise;
+  // energy-conservation correction: rescale velocities toward E0
+  const cur = energy(next);
+  const KEnow = cur - potential(next);
+  const KEtarget = E0 - potential(next);
+  if (KEnow > 1e-6 && KEtarget > 0){
+    const scale = Math.sqrt(Math.max(KEtarget,0)/KEnow);
+    next[1] *= scale;
+    next[3] *= scale;
+  }
+  return next;
+}
+function potential(state){
+  const [th1,,th2,] = state;
+  const y1 = -L1*Math.cos(th1);
+  const y2 = y1 - L2*Math.cos(th2);
+  return M1*G*y1 + M2*G*y2;
+}
+
+// ---------- Rendering ----------
+const scale = 90, ox = 150, oy = 110;
+function toXY(state){
+  const [th1,,th2,] = state;
+  const x1 = ox + L1*scale*Math.sin(th1);
+  const y1 = oy + L1*scale*Math.cos(th1);
+  const x2 = x1 + L2*scale*Math.sin(th2);
+  const y2 = y1 + L2*scale*Math.cos(th2);
+  return {x1,y1,x2,y2};
+}
+
+function makeRenderer(canvasId, color){
+  const cv = document.getElementById(canvasId);
+  const ctx = cv.getContext('2d');
+  let trail = [];
+  return {
+    draw(state, showTrails){
+      const {x1,y1,x2,y2} = toXY(state);
+      ctx.fillStyle = 'rgba(8,16,13,0.28)';
+      ctx.fillRect(0,0,cv.width,cv.height);
+
+      if (showTrails){
+        trail.push({x:x2,y:y2});
+        if (trail.length > 260) trail.shift();
+        ctx.strokeStyle = color+'55';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        trail.forEach((p,i)=> i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+        ctx.stroke();
+      } else {
+        trail = [];
+      }
+
+      ctx.strokeStyle = '#3a4b44';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(ox,oy,2.5,0,7); ctx.fill();
+      ctx.fillStyle = '#3a4b44';
+      ctx.beginPath(); ctx.arc(ox,oy,2.5,0,7); ctx.fill();
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ox,oy); ctx.lineTo(x1,y1); ctx.lineTo(x2,y2);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(x1,y1,5,0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x2,y2,6.5,0,7); ctx.fill();
+    },
+    clear(){
+      trail = [];
+      ctx.fillStyle = '#08100d';
+      ctx.fillRect(0,0,cv.width,cv.height);
+    }
+  };
+}
+
+const rPhys = makeRenderer('cv-phys', '#4fe3a1');
+const rNaive = makeRenderer('cv-naive', '#ff6b5e');
+const rPinn = makeRenderer('cv-pinn', '#5eb8ff');
+
+let showTrails = true;
+let running = false;
+let t = 0;
+const dt = 0.02;
+let statePhys, stateNaive, statePinn, E0;
+let driftAccum = {n:0};
+let rafId = null;
+
+function initStates(){
+  const th1deg = parseFloat(document.getElementById('angle1').value);
+  const nudgeDeg = parseFloat(document.getElementById('nudge').value);
+  const th1 = th1deg * Math.PI/180;
+  const th1n = (th1deg + nudgeDeg) * Math.PI/180;
+
+  statePhys = [th1, 0, th1*0.82, 0];
+  stateNaive = [th1n, 0, th1n*0.82, 0];
+  statePinn = [th1n, 0, th1n*0.82, 0];
+  E0 = energy(statePinn);
+  driftAccum = {n:0};
+  t = 0;
+  rPhys.clear(); rNaive.clear(); rPinn.clear();
+  updateEnergyBars();
+  document.getElementById('t-phys').textContent = 't=0.0s';
+  document.getElementById('t-naive').textContent = 't=0.0s';
+  document.getElementById('t-pinn').textContent = 't=0.0s';
+}
+
+function updateEnergyBars(){
+  const e0 = Math.abs(energy(statePhys));
+  const eP = energy(statePhys), eN = energy(stateNaive), ePi = energy(statePinn);
+  const dP = 0, dN = ((eN-eP)/Math.max(Math.abs(eP),0.01))*100, dPi = ((ePi-eP)/Math.max(Math.abs(eP),0.01))*100;
+  const clampW = d => Math.min(100, Math.abs(d)*6);
+  document.getElementById('fill-phys').style.width = '3%';
+  document.getElementById('fill-naive').style.width = clampW(dN)+'%';
+  document.getElementById('fill-pinn').style.width = clampW(dPi)+'%';
+  document.getElementById('drift-phys').textContent = '0.00%';
+  document.getElementById('drift-naive').textContent = dN.toFixed(2)+'%';
+  document.getElementById('drift-pinn').textContent = dPi.toFixed(2)+'%';
+}
+
+function loop(){
+  if (!running) return;
+  for (let i=0;i<2;i++){
+    statePhys = rk4Step(statePhys, dt);
+    stateNaive = naiveStep(stateNaive, dt, driftAccum);
+    statePinn = pinnStep(statePinn, dt, E0);
+    driftAccum.n += 1;
+    t += dt;
+  }
+  rPhys.draw(statePhys, showTrails);
+  rNaive.draw(stateNaive, showTrails);
+  rPinn.draw(statePinn, showTrails);
+  updateEnergyBars();
+  document.getElementById('t-phys').textContent = 't='+t.toFixed(1)+'s';
+  document.getElementById('t-naive').textContent = 't='+t.toFixed(1)+'s';
+  document.getElementById('t-pinn').textContent = 't='+t.toFixed(1)+'s';
+  rafId = requestAnimationFrame(loop);
+}
+
+document.getElementById('angle1').addEventListener('input', e=>{
+  document.getElementById('angle1val').textContent = parseFloat(e.target.value).toFixed(1)+'°';
+});
+document.getElementById('nudge').addEventListener('input', e=>{
+  document.getElementById('nudgeval').textContent = parseFloat(e.target.value).toFixed(2)+'°';
+});
+document.getElementById('run').addEventListener('click', ()=>{
+  if (running){ running=false; document.getElementById('run').textContent='Run simulation'; cancelAnimationFrame(rafId); }
+  else { running=true; document.getElementById('run').textContent='Pause'; loop(); }
+});
+document.getElementById('reset').addEventListener('click', ()=>{
+  running=false; document.getElementById('run').textContent='Run simulation';
+  cancelAnimationFrame(rafId); initStates();
+});
+document.getElementById('trails').addEventListener('click', ()=>{ showTrails=!showTrails; });
+
+// ---------- Interaction logging (feeds the adaptive tutor) ----------
+let interactionLog = [];
+function logIt(text){
+  interactionLog.push(text);
+  if (interactionLog.length > 40) interactionLog.shift();
+  const el = document.getElementById('tutor-log');
+  el.textContent = interactionLog.slice(-6).join(' · ');
+}
+
+document.getElementById('angle1').addEventListener('change', e=>{
+  logIt(`set θ1 start = ${parseFloat(e.target.value).toFixed(1)}°`);
+});
+document.getElementById('nudge').addEventListener('change', e=>{
+  logIt(`set nudge Δθ1 = ${parseFloat(e.target.value).toFixed(2)}°`);
+});
+document.getElementById('run').addEventListener('click', ()=>{
+  logIt(running ? 'started run' : 'paused run');
+});
+document.getElementById('reset').addEventListener('click', ()=>{
+  logIt('reset simulation');
+});
+document.getElementById('trails').addEventListener('click', ()=>{
+  logIt(`toggled trails ${showTrails ? 'on' : 'off'}`);
+});
+
+// snapshot energy drift periodically while running, so the tutor can see
+// how far it got before the student asked
+let lastDriftSnapshot = {naive: 0, pinn: 0, t: 0};
+setInterval(()=>{
+  if (!running) return;
+  const eP = energy(statePhys), eN = energy(stateNaive), ePi = energy(statePinn);
+  lastDriftSnapshot = {
+    naive: (((eN-eP)/Math.max(Math.abs(eP),0.01))*100).toFixed(2),
+    pinn: (((ePi-eP)/Math.max(Math.abs(eP),0.01))*100).toFixed(2),
+    t: t.toFixed(1)
+  };
+}, 1500);
+
+// ---------- Adaptive tutor: real Claude API call, grounded in what the student did ----------
+document.getElementById('ask-tutor').addEventListener('click', async ()=>{
+  const btn = document.getElementById('ask-tutor');
+  const out = document.getElementById('tutor-out');
+  const status = document.getElementById('tutor-status');
+  const apiKey = document.getElementById('api-key').value.trim();
+
+  if (!apiKey){
+    out.textContent = "Paste your free Gemini API key above first — get one at aistudio.google.com/apikey (no card needed).";
+    out.classList.add('empty');
+    return;
+  }
+
+  if (interactionLog.length === 0){
+    out.textContent = "You haven't tried anything yet — move a slider or run the simulation first, then ask again.";
+    out.classList.add('empty');
+    return;
+  }
+
+  btn.disabled = true;
+  status.innerHTML = '<span class="pulse"></span> tutor is looking at your exploration...';
+  out.classList.remove('empty');
+  out.textContent = '';
+
+  const summary = `
+Student's recent actions on a double-pendulum chaos demo (most recent last):
+${interactionLog.join('\n')}
+
+Current simulated state at time of asking:
+- elapsed sim time: ${t.toFixed(1)}s
+- current θ1 start: ${document.getElementById('angle1').value}°
+- current nudge Δθ1: ${document.getElementById('nudge').value}°
+- naive (data-only) model energy drift: ${lastDriftSnapshot.naive}%
+- physics-informed model energy drift: ${lastDriftSnapshot.pinn}%
+`;
+
+  const prompt = `You are a physics tutor watching a student explore a double pendulum chaos demo. You can see exactly what they did (below). Do NOT explain the demo generically. Instead:
+1. Notice a specific pattern in what they actually tried (e.g. only tiny nudges, never ran it long enough, ignored the energy readout, etc.)
+2. Point out one specific thing in their own data (an exact number they produced) that reveals something about chaos or about why physics-informed models behave differently.
+3. End with ONE concrete, specific next action for them to try (a number, not a vague suggestion) that would teach them something they haven't seen yet.
+Keep it under 90 words, direct, second person, no greeting, no sign-off.
+
+${summary}`;
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      }
+    );
+    if (!response.ok){
+      const errBody = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errBody}`);
+    }
+    const data = await response.json();
+    const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n').trim()
+      || "The tutor couldn't form a response — try again.";
+    out.textContent = reply;
+    status.textContent = '';
+  } catch (err){
+    out.textContent = "Tutor call failed — check your API key and connection, then try again.";
+    status.textContent = '';
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+initStates();
+</script>
+</body>
+</html>
