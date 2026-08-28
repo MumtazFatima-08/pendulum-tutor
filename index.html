@@ -215,7 +215,16 @@
           <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--pinn);">aistudio.google.com/apikey</a>.
         </p>
         <div class="tutor-log" id="tutor-log">no interactions logged yet — move a slider or run the sim</div>
-        <div class="tutor-out empty" id="tutor-out">Explore for a bit, then ask the tutor what it noticed.</div>
+
+        <div class="row" style="margin:10px 0 4px;align-items:flex-start;">
+          <label for="student-question" style="min-width:auto;padding-top:8px;">Your question</label>
+          <textarea id="student-question" placeholder="Type your own doubt here — e.g. 'why does the naive one look normal at first then suddenly go wrong?' Leave blank to just get the tutor's observation."
+            style="flex:1;background:#08100d;border:1px solid var(--line);color:var(--ink);
+            padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;
+            resize:vertical;min-height:44px;"></textarea>
+        </div>
+
+        <div class="tutor-out empty" id="tutor-out">Explore for a bit, then ask the tutor what it noticed — or type your own question above.</div>
         <div class="tutor-btn-row">
           <button class="primary" id="ask-tutor">Ask the tutor</button>
           <span id="tutor-status" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--dim);"></span>
@@ -517,6 +526,8 @@ document.getElementById('ask-tutor').addEventListener('click', async ()=>{
   out.classList.remove('empty');
   out.textContent = '';
 
+  const studentQuestion = document.getElementById('student-question').value.trim();
+
   const summary = `
 Student's recent actions on a double-pendulum chaos demo (most recent last):
 ${interactionLog.join('\n')}
@@ -529,11 +540,20 @@ Current simulated state at time of asking:
 - physics-informed model energy drift: ${lastDriftSnapshot.pinn}%
 `;
 
-  const prompt = `You are a physics tutor watching a student explore a double pendulum chaos demo. You can see exactly what they did (below). Do NOT explain the demo generically. Instead:
+  const prompt = studentQuestion
+    ? `You are a physics tutor watching a student explore a double pendulum chaos demo. Here's exactly what they've done so far (their actions and the live numbers on their screen):
+
+${summary}
+
+The student just typed this question in their own words: "${studentQuestion}"
+
+Answer THEIR specific question directly and first. Ground your answer in the actual numbers/actions above where relevant — don't give a generic textbook answer, connect it to what's on their screen right now. Write like you're actually talking to a curious teenager, not writing a paper. Use plain, everyday words — say "the two pendulums moved apart" not "trajectory divergence," say "the AI made up energy that wasn't there" not "energy conservation violation." No jargon unless you immediately explain it in the same sentence. Short sentences. Keep it under 110 words, direct, second person, no greeting, no sign-off.`
+    : `You are a physics tutor watching a student explore a double pendulum chaos demo. You can see exactly what they did (below). Do NOT explain the demo generically. Instead:
 1. Notice a specific pattern in what they actually tried (e.g. only tiny nudges, never ran it long enough, ignored the energy readout, etc.)
 2. Point out one specific thing in their own data (an exact number they produced) that reveals something about chaos or about why physics-informed models behave differently.
 3. End with ONE concrete, specific next action for them to try (a number, not a vague suggestion) that would teach them something they haven't seen yet.
-Keep it under 90 words, direct, second person, no greeting, no sign-off.
+
+Write like you're actually talking to a curious teenager, not writing a paper. Use plain, everyday words — say "the two pendulums moved apart" not "trajectory divergence," say "the AI made up energy that wasn't there" not "energy conservation violation." No jargon unless you immediately explain it in the same sentence. Short sentences. Keep it under 90 words, direct, second person, no greeting, no sign-off.
 
 ${summary}`;
 
@@ -557,6 +577,10 @@ ${summary}`;
       || "The tutor couldn't form a response — try again.";
     out.textContent = reply;
     status.textContent = '';
+    if (studentQuestion){
+      logIt(`asked: "${studentQuestion.slice(0,60)}${studentQuestion.length>60?'...':''}"`);
+      document.getElementById('student-question').value = '';
+    }
   } catch (err){
     out.textContent = "Tutor call failed — check your API key and connection, then try again.";
     status.textContent = '';
